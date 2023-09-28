@@ -4,6 +4,7 @@ from app.core.fastjwt import FastJWT
 from api.models.user import UserModel
 from api.schemas.user import ChangePassword
 from app.core.password import hash_password
+from app.core.permission import check_permission
 
 user_router = APIRouter()
 
@@ -16,8 +17,8 @@ async def my_profile(request: Request):
         raise HTTPException(
             status_code=400, detail="Invalid credentials or user not exist"
         )
-    user = user.model_dump()
-    del user["password"]
+    user = user.model_dump(exclude={"password", "revision_id"})
+
     return user
 
 
@@ -50,3 +51,17 @@ async def change_password(request: Request, payload: ChangePassword):
     await user.save()
 
     return {"message": "Password Updated."}
+
+
+@user_router.get("/all")
+async def all_users(request: Request):
+    await check_permission(request, "internal", "users_list")
+
+    _users = await UserModel.find().to_list()
+
+    users = []
+    for user in _users:
+        user = user.model_dump(exclude={"password", "revision_id"})
+        users.append(user)
+
+    return users

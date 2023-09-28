@@ -38,6 +38,17 @@ async def create_service(payload: NewService, request: Request):
         }
     )
 
+    # Give user permission to manage this service
+    await PermissionModel(
+        user_id=PydanticObjectId(
+            (await FastJWT().decode(request.headers.get("Authorisation"))).get(
+                "user_id"
+            )
+        ),
+        service=payload.name,
+        value="create_permission",
+    ).save()
+
     return {
         "name": payload.name,
         "token": token,
@@ -46,7 +57,7 @@ async def create_service(payload: NewService, request: Request):
 
 @service_router.get("/{service_name}/token")
 async def get_service_token(service_name: str, request: Request):
-    await check_permission(request, "internal", "generate_service_token")
+    await check_permission(request, service_name, "generate_service_token")
 
     service = await ServiceModel.find_one({"name": service_name})
 
@@ -102,3 +113,28 @@ async def check_user_permission(
         raise HTTPException(status_code=403, detail="Permission denied")
 
     return {"message": "Permission granted"}
+
+
+@service_router.get("/all")
+async def all_services(request: Request):
+    await check_permission(request, "internal", "services_list")
+
+    services = await ServiceModel.find().to_list()
+
+    return services
+
+
+@service_router.delete("/shutdown/{service}")
+async def delete_service(request: Request, service: str):
+    await check_permission(request, service, "delete_service")
+
+    _service = await ServiceModel.find_one({"name": service})
+
+    if not _service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    await _service.delete()
+
+    await PermissionModel.find({"service": service}).delete()
+
+    return {"message": "Service deleted"}
